@@ -30,16 +30,28 @@ def get_distro_info():
     return distro_id or "Ubuntu", codename or "unknown"
 
 def get_repos():
+    """
+    Parse apt-cache policy output to get all repos, including third-party.
+    Returns a set of (origin, archive) tuples.
+    """
     output = subprocess.check_output(["apt-cache", "policy"], text=True)
     repos = set()
+    origin, archive = None, None
     for line in output.splitlines():
-        if "release" in line and "o=" in line and "a=" in line:
+        line = line.strip()
+        if line.startswith("release"):
             o_match = re.search(r"o=([^,]+)", line)
             a_match = re.search(r"a=([^,]+)", line)
-            if o_match and a_match:
-                origin = o_match.group(1).strip()
-                archive = a_match.group(1).strip()
-                repos.add((origin, archive))
+            origin = o_match.group(1).strip() if o_match else None
+            archive = a_match.group(1).strip() if a_match else None
+        elif line.startswith("origin") and not origin:
+            origin = line.split()[1].strip()
+        elif line == "" and origin and archive:
+            repos.add((origin, archive))
+            origin, archive = None, None
+    # Catch last entry if needed
+    if origin and archive:
+        repos.add((origin, archive))
     return sorted(repos)
 
 def generate_config(distro_id, codename, repos):
@@ -59,13 +71,16 @@ Unattended-Upgrade::Allowed-Origins {{
     # Third-party repos
     third_party = set()
     for origin, archive in repos:
-        if archive == codename:
+        if not origin:
+            continue
+        if not archive:
+            archive = "${distro_codename}"
+        elif archive == codename:
             archive = "${distro_codename}"
         entry = f"{origin}:{archive}"
         if not entry.startswith(f"{distro_id}:"):
             third_party.add(entry)
 
-    # Build config content
     body = "".join([f'        "{entry}";\n' for entry in ubuntu_defaults])
     body += "".join([f'        "{entry}";\n' for entry in sorted(third_party)])
 
