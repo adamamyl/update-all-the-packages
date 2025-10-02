@@ -31,27 +31,38 @@ def get_distro_info():
 
 def get_repos():
     """
-    Parse apt-cache policy output to get all repos, including third-party.
-    Returns a set of (origin, archive) tuples.
+    Parse apt-cache policy output to get all repos as (origin, archive) tuples.
+    Fallbacks:
+      - origin from 'release' o=, else from 'origin' line
+      - archive from 'release' a=, else default to ${distro_codename}
     """
     output = subprocess.check_output(["apt-cache", "policy"], text=True)
     repos = set()
-    origin, archive = None, None
+    current_origin = None
+    current_archive = None
+
     for line in output.splitlines():
         line = line.strip()
         if line.startswith("release"):
             o_match = re.search(r"o=([^,]+)", line)
             a_match = re.search(r"a=([^,]+)", line)
-            origin = o_match.group(1).strip() if o_match else None
-            archive = a_match.group(1).strip() if a_match else None
-        elif line.startswith("origin") and not origin:
-            origin = line.split()[1].strip()
-        elif line == "" and origin and archive:
-            repos.add((origin, archive))
-            origin, archive = None, None
-    # Catch last entry if needed
-    if origin and archive:
-        repos.add((origin, archive))
+            current_origin = o_match.group(1).strip() if o_match else None
+            current_archive = a_match.group(1).strip() if a_match else None
+        elif line.startswith("origin") and not current_origin:
+            current_origin = line.split()[1].strip()
+        elif line == "" and current_origin:
+            if not current_archive:
+                current_archive = "${distro_codename}"
+            repos.add((current_origin, current_archive))
+            current_origin = None
+            current_archive = None
+
+    # Catch last entry
+    if current_origin:
+        if not current_archive:
+            current_archive = "${distro_codename}"
+        repos.add((current_origin, current_archive))
+
     return sorted(repos)
 
 def generate_config(distro_id, codename, repos):
@@ -68,7 +79,7 @@ Unattended-Upgrade::Allowed-Origins {{
         f"{distro_id}:${{distro_codename}}-backports",
     ]
 
-    # Third-party repos
+    # Third-party repos appended
     third_party = set()
     for origin, archive in repos:
         if not origin:
