@@ -48,19 +48,26 @@ def generate_config(distro_id, codename, repos):
 
 Unattended-Upgrade::Allowed-Origins {{
 """
-    entries = {
+    # Ubuntu defaults first
+    ubuntu_defaults = [
         f"{distro_id}:${{distro_codename}}",
         f"{distro_id}:${{distro_codename}}-security",
         f"{distro_id}:${{distro_codename}}-updates",
         f"{distro_id}:${{distro_codename}}-backports",
-    }
+    ]
 
+    # Third-party repos
+    third_party = set()
     for origin, archive in repos:
         if archive == codename:
             archive = "${distro_codename}"
-        entries.add(f"{origin}:{archive}")
+        entry = f"{origin}:{archive}"
+        if not entry.startswith(f"{distro_id}:"):
+            third_party.add(entry)
 
-    body = "".join([f'        "{entry}";\n' for entry in sorted(entries)])
+    # Build config content
+    body = "".join([f'        "{entry}";\n' for entry in ubuntu_defaults])
+    body += "".join([f'        "{entry}";\n' for entry in sorted(third_party)])
 
     footer = """};
 
@@ -72,7 +79,7 @@ Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
 Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "02:00";
 """
-    return header + body + footer, entries
+    return header + body + footer, third_party
 
 def file_hash(path):
     try:
@@ -82,6 +89,7 @@ def file_hash(path):
         return None
 
 def extract_existing_third_party_entries():
+    """Return a set of existing third-party origin:archive strings, ignoring Ubuntu defaults."""
     existing = set()
     if not os.path.exists(CONFIG_FILE):
         return existing
@@ -95,7 +103,7 @@ def extract_existing_third_party_entries():
 def main():
     distro_id, codename = get_distro_info()
     repos = get_repos()
-    config_content, new_entries = generate_config(distro_id, codename, repos)
+    config_content, new_third_party = generate_config(distro_id, codename, repos)
 
     current_hash = file_hash(CONFIG_FILE)
     new_hash = hashlib.sha256(config_content.encode("utf-8")).hexdigest()
@@ -107,7 +115,6 @@ def main():
         os.replace(tmpfile, CONFIG_FILE)
 
         old_third_party = extract_existing_third_party_entries()
-        new_third_party = {e for e in new_entries if not e.startswith(f"{distro_id}:")}
         added = new_third_party - old_third_party
         removed = old_third_party - new_third_party
 
