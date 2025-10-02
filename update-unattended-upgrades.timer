@@ -1,0 +1,10 @@
+[Unit]
+Description=Run update-unattended-upgrades daily
+
+[Timer]
+# Run daily at 1am
+OnCalendar=*-*-* 01:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

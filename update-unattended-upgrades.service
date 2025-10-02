@@ -1,0 +1,7 @@
+[Unit]
+Description=Update 50unattended-upgrades automatically
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update-unattended-upgrades.py
+User=root
