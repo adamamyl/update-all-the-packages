@@ -31,37 +31,22 @@ def get_distro_info():
 
 def get_repos():
     """
-    Parse apt-cache policy output to get all repos as (origin, archive) tuples.
-    Fallbacks:
-      - origin from 'release' o=, else from 'origin' line
-      - archive from 'release' a=, else default to ${distro_codename}
+    Parse apt-cache policy output to get all third-party repos as (origin, archive) tuples.
+    - origin: from o= in release line
+    - archive: from a= in release line, or fallback to ${distro_codename} if missing
     """
     output = subprocess.check_output(["apt-cache", "policy"], text=True)
     repos = set()
-    current_origin = None
-    current_archive = None
 
     for line in output.splitlines():
         line = line.strip()
         if line.startswith("release"):
             o_match = re.search(r"o=([^,]+)", line)
             a_match = re.search(r"a=([^,]+)", line)
-            current_origin = o_match.group(1).strip() if o_match else None
-            current_archive = a_match.group(1).strip() if a_match else None
-        elif line.startswith("origin") and not current_origin:
-            current_origin = line.split()[1].strip()
-        elif line == "" and current_origin:
-            if not current_archive:
-                current_archive = "${distro_codename}"
-            repos.add((current_origin, current_archive))
-            current_origin = None
-            current_archive = None
-
-    # Catch last entry
-    if current_origin:
-        if not current_archive:
-            current_archive = "${distro_codename}"
-        repos.add((current_origin, current_archive))
+            origin = o_match.group(1).strip() if o_match else None
+            archive = a_match.group(1).strip() if a_match else "${distro_codename}"
+            if origin:
+                repos.add((origin, archive))
 
     return sorted(repos)
 
@@ -84,9 +69,7 @@ Unattended-Upgrade::Allowed-Origins {{
     for origin, archive in repos:
         if not origin:
             continue
-        if not archive:
-            archive = "${distro_codename}"
-        elif archive == codename:
+        if archive == codename:
             archive = "${distro_codename}"
         entry = f"{origin}:{archive}"
         if not entry.startswith(f"{distro_id}:"):
